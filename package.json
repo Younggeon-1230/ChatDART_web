@@ -1,0 +1,42 @@
+{
+  "name": "chatdart-web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --webpack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint",
+    "test": "node --experimental-strip-types --experimental-loader ./scripts/typescript-path-loader.mjs --test tests/*.test.ts",
+    "dev:vinext": "node scripts/vinext-cloudflare.mjs dev --port 3001",
+    "build:vinext": "node scripts/vinext-cloudflare.mjs build",
+    "start:vinext": "vite preview",
+    "deploy:vinext": "node scripts/vinext-cloudflare.mjs deploy"
+  },
+  "dependencies": {
+    "@vinext/cloudflare": "^1.0.0",
+    "lucide-react": "^1.7.0",
+    "next": "16.2.2",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "react-server-dom-webpack": "^19.3.0",
+    "recharts": "^3.8.1",
+    "vinext": "^1.0.0"
+  },
+  "devDependencies": {
+    "@cloudflare/vite-plugin": "^2.0.0-beta.sha-ad79608dd",
+    "@tailwindcss/postcss": "^4",
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.1.1",
+    "@vitejs/plugin-rsc": "^0.5.35",
+    "cf": "^1.0.0-beta.5",
+    "eslint": "^9",
+    "eslint-config-next": "16.2.2",
+    "tailwindcss": "^4",
+    "typescript": "^5",
+    "vite": "^8.3.0"
+  },
+  "type": "module"
+}
