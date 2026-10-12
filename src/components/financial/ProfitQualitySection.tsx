@@ -4,6 +4,7 @@ import Box from "@/components/financial/Box";
 import SectionLabel from "@/components/financial/SectionLabel";
 import { cn } from "@/lib/classNames";
 import {
+  formatPercent,
   formatRatio,
   formatSignedPercent,
   type NumericValue,
@@ -24,11 +25,6 @@ function isMissingNumber(
   return value === null || value === undefined || !Number.isFinite(value);
 }
 
-function formatPercentValue(value: number | null | undefined) {
-  if (isMissingNumber(value)) return "-";
-  return `${value.toFixed(1)}%`;
-}
-
 function formatRatioValue(value: number | null | undefined) {
   if (isMissingNumber(value)) return "-";
   return `${formatRatio(value, 1)}배`;
@@ -40,7 +36,7 @@ function formatEvidenceValue(
   currencyFormatter: (value: NumericValue) => string
 ) {
   if (evidence.unit === "currency") return currencyFormatter(value);
-  if (evidence.unit === "percent") return formatPercentValue(value);
+  if (evidence.unit === "percent") return formatPercent(value, 1);
   if (evidence.unit === "ratio") return formatRatioValue(value);
   return isMissingNumber(value) ? "-" : String(value);
 }

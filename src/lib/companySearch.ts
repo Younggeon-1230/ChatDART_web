@@ -11,6 +11,7 @@ import {
   hasStoredAccessToken,
 } from "@/lib/authTokens";
 import {
+  getApiErrorCode,
   getApiErrorMessage,
   getFinanceServiceUnavailableKind,
   parseApiErrorBody,
@@ -371,7 +372,7 @@ function createSearchError(
 function shouldUseFinanceSearchMockFallback(error: unknown) {
   const status = (error as { status?: unknown })?.status;
 
-  if (status === 401 || status === 403) {
+  if (status === 401 || status === 403 || getApiErrorCode(error)) {
     return false;
   }
 
@@ -393,7 +394,6 @@ async function parseSearchJson(response: Response): Promise<RawCompanySearchResp
 function buildSearchHeaders() {
   return {
     ...buildAuthorizationHeader(),
-    "ngrok-skip-browser-warning": "true",
   };
 }
 
@@ -455,6 +455,8 @@ export async function searchCompanies(
 
       if (!response.ok) {
         const error = new Error("검색 결과를 불러오지 못했습니다.") as Error & {
+          code?: string;
+          detail?: unknown;
           status?: number;
           userMessage?: string;
         };
@@ -464,6 +466,8 @@ export async function searchCompanies(
         try {
           const errorBody = rawText ? JSON.parse(rawText) : null;
           const parsedError = parseApiErrorBody(errorBody);
+          error.code = parsedError.code;
+          error.detail = parsedError.detail;
           if (parsedError.message) {
             error.userMessage = parsedError.message;
           }

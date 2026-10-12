@@ -31,6 +31,14 @@ function makeYear(
   };
 }
 
+test("shared percent formatter preserves missing, zero, sign, and precision", () => {
+  assert.equal(formatPercent(null, 1), "-");
+  assert.equal(formatPercent(undefined, 1), "-");
+  assert.equal(formatPercent(0, 1), "0.0%");
+  assert.equal(formatPercent(-1.25, 1), "-1.3%");
+  assert.equal(formatPercent(1.25, 2), "1.25%");
+});
+
 test("preserves direct revenue growth rates that are already percent values", () => {
   for (const value of [0.5, 0.91, 1, 1.01, 10, -0.5, -0.91, -1]) {
     const history = [

@@ -37,7 +37,6 @@ import RelatedCompanyList from "@/components/financial/RelatedCompanyList";
 import Box from "@/components/financial/Box";
 import SectionLabel from "@/components/financial/SectionLabel";
 import { useDataSource } from "@/components/layout/DataSourceProvider";
-import { useMockAuth } from "@/hooks/useMockAuth";
 import { useCompanySearch } from "@/hooks/useCompanySearch";
 import {
   createCompareShareLink,
@@ -46,7 +45,6 @@ import {
   getUserFriendlyApiErrorMessage,
 } from "@/lib/api";
 import { formatCompareShareExpiry } from "@/lib/compareShare";
-import { canUseFeature } from "@/lib/featureAccess";
 import {
   FINANCIAL_STATUS_TEXT_TERMS,
   getFinancialStatusChipClass,
@@ -210,23 +208,6 @@ function normalizeCompareQueryValue(value: string | null) {
   if (!trimmed) return "";
 
   return trimmed.slice(0, 80);
-}
-
-function FeatureLockedCard({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <Box className="p-6">
-      <SectionLabel>{title}</SectionLabel>
-      <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-5 text-sm leading-7 text-slate-600">
-        {description}
-      </div>
-    </Box>
-  );
 }
 
 function formatKoreanMoney(value: NumericValue) {
@@ -1110,8 +1091,6 @@ export function ComparePageContent({
     setDataSource,
     setIsRunningAnalysis,
   } = useDataSource();
-  const { plan } = useMockAuth();
-  const canAccessCompare = canUseFeature(plan, "companyCompare");
   const companyParams = searchParams
     .getAll("company")
     .map(normalizeCompareQueryValue);
@@ -1219,7 +1198,7 @@ export function ComparePageContent({
 
   const canStartCompare =
     selectedCompanies.length >= MIN_COMPARE_SELECTION_COUNT;
-  const showResultView = canAccessCompare && canStartCompare;
+  const showResultView = canStartCompare;
 
   useEffect(() => {
     let isMounted = true;
@@ -1894,13 +1873,7 @@ export function ComparePageContent({
         </div>
 
         <div className="min-w-0 space-y-5">
-          {!canAccessCompare ? (
-            <FeatureLockedCard
-              title="기업 비교 이용 안내"
-              description="기업 비교는 로그인 후 이용할 수 있습니다."
-            />
-          ) : (
-            <>
+          <>
               {!isPublicShare && (
                 <CompareCompanySelector
                   selectedCompanies={selectedCompaniesForDisplay}
@@ -2318,8 +2291,7 @@ export function ComparePageContent({
               )}
                 </>
               )}
-            </>
-          )}
+          </>
         </div>
 
       </div>

@@ -1,4 +1,5 @@
 import type { SectorAverageApi } from "@/types/api";
+import { isRecord } from "@/lib/financialNormalize";
 
 export type SectorComparisonMetricKey =
   | "revenue_growth_rate"
@@ -67,10 +68,6 @@ const FINANCIAL_METRIC_KEYS = new Set<SectorComparisonMetricKey>([
   "roa",
   "debt_ratio",
 ]);
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return !!value && typeof value === "object" && !Array.isArray(value);
-}
 
 function getFiniteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;

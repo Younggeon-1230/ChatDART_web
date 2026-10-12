@@ -1,5 +1,5 @@
-import { getApiErrorStatus } from "@/lib/apiErrors";
 import type { CompanyAnalysisTarget } from "@/lib/companySearch";
+import { isDetailCollectionRequiredError } from "@/lib/detailCollectionFlow";
 import type {
   CollectResponseApi,
   CollectionStatusResponseApi,
@@ -116,13 +116,17 @@ export async function probeSummaryCollectionState(
       return { kind: "completed", detail };
     }
 
+    if (detail.collection_status === null) {
+      throw new Error("지원하지 않는 데이터 수집 상태입니다.");
+    }
+
     return classifyCollectionStatus({
       status: detail.collection_status,
       message: detail.message,
       collection_updated_at: detail.collection_updated_at,
     });
   } catch (error) {
-    if (getApiErrorStatus(error) !== 404) {
+    if (!isDetailCollectionRequiredError(error)) {
       throw error;
     }
 

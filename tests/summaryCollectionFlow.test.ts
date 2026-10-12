@@ -26,8 +26,13 @@ const completedDetail = {
   trend: {},
 } as SummaryDetailApiResponse;
 
-function httpError(status: number, message = `HTTP ${status}`) {
-  return Object.assign(new Error(message), { status });
+function httpError(status: number, userMessage?: string, code?: string) {
+  return Object.assign(new Error(`HTTP ${status}`), {
+    code,
+    detail: userMessage,
+    status,
+    userMessage,
+  });
 }
 
 function statusResponse(
@@ -37,9 +42,8 @@ function statusResponse(
   return { status, message };
 }
 
-test("completed detail skips collection status and collection", async () => {
+test("completed detail skips collection status and stops the initial flow", async () => {
   let statusCalls = 0;
-  let collectCalls = 0;
 
   const result = await probeSummaryCollectionState(target, {
     getSummaryDetail: async () => completedDetail,
@@ -49,16 +53,12 @@ test("completed detail skips collection status and collection", async () => {
     },
   });
 
-  if (getInitialSummaryAction(result.kind === "completed" ? "completed" : "error") === "collect") {
-    collectCalls += 1;
-  }
-
   assert.equal(result.kind, "completed");
   assert.equal(statusCalls, 0);
-  assert.equal(collectCalls, 0);
+  assert.equal(getInitialSummaryAction("completed"), "stop");
 });
 
-test("uncollected detail uses status, collects once, and reaches completed", async () => {
+test("exact collection-required 404 checks status and reaches completed", async () => {
   const statuses: CollectionStatusResponseApi["status"][] = [
     "none",
     "pending",
@@ -67,12 +67,13 @@ test("uncollected detail uses status, collects once, and reaches completed", asy
   ];
   let detailCalls = 0;
   let statusCalls = 0;
-  let collectCalls = 0;
 
   const dependencies = {
     getSummaryDetail: async () => {
       detailCalls += 1;
-      if (detailCalls <= statuses.length) throw httpError(404);
+      if (detailCalls <= statuses.length) {
+        throw httpError(404, "데이터 수집이 필요합니다.");
+      }
       return completedDetail;
     },
     getCollectionStatus: async () => {
@@ -85,45 +86,121 @@ test("uncollected detail uses status, collects once, and reaches completed", asy
 
   const initial = await probeSummaryCollectionState(target, dependencies);
   assert.equal(initial.kind, "needs_collection");
-
-  if (getInitialSummaryAction("needs_collection") === "collect") {
-    collectCalls += 1;
-  }
+  assert.equal(getInitialSummaryAction("needs_collection"), "collect");
 
   assert.equal((await probeSummaryCollectionState(target, dependencies)).kind, "pending");
   assert.equal((await probeSummaryCollectionState(target, dependencies)).kind, "pending");
   assert.equal((await probeSummaryCollectionState(target, dependencies)).kind, "retry_detail");
   assert.equal((await probeSummaryCollectionState(target, dependencies)).kind, "completed");
-  assert.equal(collectCalls, 1);
   assert.equal(statusCalls, 4);
 });
 
-for (const status of ["pending", "processing"] as const) {
-  test(`${status} continues polling without collecting`, async () => {
-    let collectCalls = 0;
-    const result = await probeSummaryCollectionState(target, {
-      getSummaryDetail: async () => {
-        throw httpError(404);
-      },
-      getCollectionStatus: async () => statusResponse(status),
-    });
+test("COLLECTION_REQUIRED code checks status when the detail has changed", async () => {
+  let statusCalls = 0;
 
-    if (getInitialSummaryAction(result.kind === "pending" ? "pending" : "error") === "collect") {
-      collectCalls += 1;
-    }
-
-    assert.equal(result.kind, "pending");
-    assert.equal(collectCalls, 0);
+  const result = await probeSummaryCollectionState(target, {
+    getSummaryDetail: async () => {
+      throw httpError(404, "새로운 백엔드 문구", "COLLECTION_REQUIRED");
+    },
+    getCollectionStatus: async () => {
+      statusCalls += 1;
+      return statusResponse("none");
+    },
   });
-}
 
-test("collection status 404 stops without collecting", async () => {
-  const collectCalls = 0;
+  assert.equal(result.kind, "needs_collection");
+  assert.equal(statusCalls, 1);
+});
+
+test("a general detail 404 preserves the original error", async () => {
+  let statusCalls = 0;
+  const error = httpError(404, "기업을 찾을 수 없습니다.");
 
   await assert.rejects(
     probeSummaryCollectionState(target, {
       getSummaryDetail: async () => {
-        throw httpError(404);
+        throw error;
+      },
+      getCollectionStatus: async () => {
+        statusCalls += 1;
+        return statusResponse("none");
+      },
+    }),
+    (actual: unknown) => actual === error
+  );
+
+  assert.equal(statusCalls, 0);
+});
+
+for (const [status, code] of [
+  [404, "COMPANY_NOT_FOUND"],
+  [404, "COMPANY_DELISTED"],
+  [503, "SERVICE_NOT_READY"],
+] as const) {
+  test(`${code} does not enter the summary collection-status path`, async () => {
+    let statusCalls = 0;
+    const error = httpError(
+      status,
+      "데이터 수집이 필요합니다.",
+      code
+    );
+
+    await assert.rejects(
+      probeSummaryCollectionState(target, {
+        getSummaryDetail: async () => {
+          throw error;
+        },
+        getCollectionStatus: async () => {
+          statusCalls += 1;
+          return statusResponse("none");
+        },
+      }),
+      (actual: unknown) => actual === error
+    );
+
+    assert.equal(statusCalls, 0);
+  });
+}
+
+for (const status of ["pending", "processing"] as const) {
+  test(`${status} maps to the pending poll action`, async () => {
+    const result = await probeSummaryCollectionState(target, {
+      getSummaryDetail: async () => {
+        throw httpError(404, "데이터 수집이 필요합니다.");
+      },
+      getCollectionStatus: async () => statusResponse(status),
+    });
+
+    assert.equal(result.kind, "pending");
+    assert.equal(getInitialSummaryAction("pending"), "poll");
+  });
+}
+
+test("a null detail status does not enter the collection-status fallback", async () => {
+  let statusCalls = 0;
+
+  await assert.rejects(
+    probeSummaryCollectionState(target, {
+      getSummaryDetail: async () => ({
+        ...completedDetail,
+        collection_status: null,
+      }),
+      getCollectionStatus: async () => {
+        statusCalls += 1;
+        return statusResponse("none");
+      },
+    }),
+    /지원하지 않는 데이터 수집 상태입니다\./
+  );
+
+  assert.equal(statusCalls, 0);
+});
+
+test("collection status 404 preserves its error", async () => {
+  await assert.rejects(
+    probeSummaryCollectionState(target, {
+      getSummaryDetail: async () => {
+        throw httpError(404, "데이터 수집이 필요합니다.");
       },
       getCollectionStatus: async () => {
         throw httpError(404, "기업을 찾을 수 없습니다.");
@@ -134,14 +211,12 @@ test("collection status 404 stops without collecting", async () => {
       return true;
     }
   );
-
-  assert.equal(collectCalls, 0);
 });
 
-test("failed collection status is terminal and does not collect", async () => {
+test("failed collection status is terminal and maps to stop", async () => {
   const result = await probeSummaryCollectionState(target, {
     getSummaryDetail: async () => {
-      throw httpError(404);
+      throw httpError(404, "데이터 수집이 필요합니다.");
     },
     getCollectionStatus: async () => statusResponse("failed", "수집에 실패했습니다."),
   });
@@ -215,7 +290,7 @@ test("failed retry errors release the click lock without automatic retry", async
   assert.equal(getInitialSummaryAction("failed"), "stop");
 });
 
-test("a retry that fails again does not trigger another collection automatically", async () => {
+test("failed poll action stops after one accepted manual retry", async () => {
   let collectCalls = 0;
   const lock = { current: false };
 
@@ -228,8 +303,7 @@ test("a retry that fails again does not trigger another collection automatically
     lock
   );
 
-  const nextPollResult = "failed" as const;
-  assert.equal(getInitialSummaryAction(nextPollResult), "stop");
+  assert.equal(getInitialSummaryAction("failed"), "stop");
   assert.equal(collectCalls, 1);
 });
 
@@ -278,7 +352,6 @@ test("completed, errors, failures, and timeout remain distinct terminal results"
   assert.equal(isTerminalSummaryPollResult("failed"), true);
   assert.equal(isTerminalSummaryPollResult("error"), true);
   assert.equal(isTerminalSummaryPollResult("timeout"), true);
-  assert.notEqual("timeout", "completed");
   assert.equal(getInitialSummaryAction("timeout"), "stop");
 });
 

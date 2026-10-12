@@ -12,12 +12,6 @@ import { resolveInternalLoginRedirect } from "@/lib/authRedirect";
 import { getAuthErrorMessage } from "@/lib/authForm";
 import { storeAuthTokens } from "@/lib/authTokens";
 
-const DEMO_EMAIL = "demo@chatdart.app";
-type LoginCredentials = {
-  email: string;
-  password: string;
-};
-
 function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -31,14 +25,12 @@ function LoginForm() {
     [searchParams]
   );
 
-  async function submitLogin(credentials?: LoginCredentials) {
+  async function submitLogin() {
     setErrorText("");
 
-    const nextEmail = credentials?.email ?? email;
-    const nextPassword = credentials?.password ?? password;
-    const normalizedEmail = nextEmail.trim();
+    const normalizedEmail = email.trim();
 
-    if (!normalizedEmail || !nextPassword) {
+    if (!normalizedEmail || !password) {
       setErrorText("이메일과 비밀번호를 입력해 주세요.");
       return;
     }
@@ -47,7 +39,7 @@ function LoginForm() {
       setIsSubmitting(true);
       const response = await login({
         email: normalizedEmail,
-        password: nextPassword,
+        password,
       });
       storeAuthTokens(response);
       router.push(redirectTo);
@@ -61,11 +53,6 @@ function LoginForm() {
   function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     void submitLogin();
-  }
-
-  function handleDemoLogin() {
-    setEmail(DEMO_EMAIL);
-    setPassword("");
   }
 
   return (
@@ -117,23 +104,6 @@ function LoginForm() {
               disabled={isSubmitting}
             />
           </FormField>
-
-          <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs leading-5 text-slate-500">
-                데모 계정 이메일을 입력합니다. 비밀번호는 별도로 입력해 주세요.
-              </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDemoLogin}
-                disabled={isSubmitting}
-              >
-                데모 이메일 입력
-              </Button>
-            </div>
-          </div>
 
           <Button
             type="submit"

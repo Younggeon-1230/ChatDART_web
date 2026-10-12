@@ -28,7 +28,7 @@ HTTP 404
 
 ### 원인
 
-Frontend와 Backend가 **"데이터가 아직 수집되지 않은 상태"를 서로 다른 방식으로 표현**하고 있었습니다.
+Frontend와 Backend가 **"데이터가 아직 수집되지 않은 상태"를 서로 다른 방식으로 표현**하고 있었습니다. 이후 Backend가 structured error code를 제공하면서 code를 authoritative signal로 사용할 수 있게 됐지만, 이전 응답과의 호환성도 제한적으로 필요했습니다.
 
 ```text
 Frontend 예상
@@ -42,7 +42,7 @@ Frontend 예상
 
 ### 해결
 
-Summary와 Detail의 수집 흐름을 별도 helper로 분리하고 `404`를 무조건 수집 신호로 취급하지 않도록 했습니다.
+Summary와 Detail의 수집 흐름을 별도 모듈로 분리하고 `404`를 무조건 수집 신호로 취급하지 않도록 했습니다. 현재는 `COLLECTION_REQUIRED` code를 우선 판정하고, code가 없는 이전 응답에만 정확히 일치하는 legacy detail을 fallback으로 사용합니다.
 
 - Summary
   - detail 요청이 `404`이면 collection status API로 상태를 재확인
@@ -60,6 +60,8 @@ Summary와 Detail의 수집 흐름을 별도 helper로 분리하고 `404`를 무
 ```text
 src/lib/summaryCollectionFlow.ts
 src/lib/detailCollectionFlow.ts
+src/lib/collectionPolicy.ts
+src/lib/apiErrors.ts
 tests/summaryCollectionFlow.test.ts
 tests/detailCollectionFlow.test.ts
 ```
@@ -70,7 +72,7 @@ tests/detailCollectionFlow.test.ts
 
 ### 배운 점
 
-HTTP status 하나만 보고 사용자 상태를 결정하기보다, **도메인 상태와 API 계약을 함께 모델링해야 한다**는 점을 확인했습니다.
+HTTP status 하나만 보고 사용자 상태를 결정하기보다, **structured code와 도메인 상태를 함께 모델링하고 legacy 문자열 판정의 범위를 최소화해야 한다**는 점을 확인했습니다.
 
 ---
 
@@ -138,7 +140,9 @@ Frontend에서 기존 API Key 의존성을 제거하고 인증 방식을 정리�
 관련 코드:
 
 ```text
-src/lib/api.ts
+src/lib/api/client.ts
+src/lib/api/auth.ts
+src/lib/api/finance.ts
 src/lib/authTokens.ts
 tests/summaryCollectionFlow.test.ts
 ```
@@ -185,7 +189,8 @@ const roundedMagnitude =
 관련 코드:
 
 ```text
-src/lib/api.ts
+src/lib/api/insights.ts
+src/lib/insightInterpretationFlow.ts
 tests/insightInterpretationRequest.test.ts
 ```
 
@@ -195,7 +200,38 @@ Frontend 화면과 AI 해석에 전달되는 증감률의 표현 기준을 맞�
 
 ---
 
-## 5. Next.js 프로젝트에 Vite 설정이 함께 존재하는 이유
+## 5. Backend가 선정한 AI primary metadata 보존
+
+AI interpretation 응답의 `primary_flag: { id, year } | null`은 Backend가 결정한 대표 신호입니다. Frontend는 형식을 안전하게 검사하지만 warning/positive 배열을 재정렬하거나 primary를 다시 계산하지 않습니다. headline, positive, caution, check items 역시 표시 경계에서 재가공하지 않고 기존 fallback과 request-key/cache 계약을 유지합니다.
+
+관련 코드:
+
+```text
+src/lib/api/insights.ts
+src/lib/insightInterpretationFlow.ts
+src/hooks/useInsightInterpretation.ts
+tests/insightsApi.test.ts
+tests/insightInterpretationFlow.test.ts
+```
+
+---
+
+## 6. Worker proxy를 fail-closed allowlist로 제한
+
+Same-origin Worker proxy는 환경변수에 localhost fallback을 두지 않습니다. `UPSTREAM_API_ORIGIN`이 없거나 HTTPS URL이 아니거나 credentials를 포함하면 upstream fetch 전에 `503`으로 종료합니다.
+
+허용된 production route와 HTTP method만 exact match로 전달하고 traversal 및 encoded separator를 차단합니다. 요청과 응답의 hop-by-hop header, `Connection`이 지목한 header, 인프라 header를 제거하되 사용자 `Authorization`은 보존합니다. `_health`만 Backend `/health`로 명시적으로 매핑합니다.
+
+관련 코드:
+
+```text
+src/app/api/[...path]/route.ts
+tests/proxyRoute.test.ts
+```
+
+---
+
+## 7. Next.js 프로젝트에 Vite 설정이 함께 존재하는 이유
 
 이 프로젝트의 애플리케이션 프레임워크는 **Next.js**입니다.
 
@@ -232,7 +268,11 @@ scripts/vinext-cloudflare.mjs
 
 - Backend의 상태 표현과 Frontend 사용자 흐름이 일치하는가
 - 동일한 HTTP status라도 도메인 의미를 구분해야 하는가
+- structured error code와 legacy compatibility의 우선순위가 명확한가
 - 실패·재시도에서 중복 요청이 발생하지 않는가
+- timeout 이후 사용자의 명시적 재시도가 안전한가
 - AI로 전달되는 재무 값의 표현 기준이 UI와 일치하는가
+- Backend가 선정한 primary metadata를 Frontend가 임의로 재해석하지 않는가
 - 브라우저에 노출되는 값과 서버 Secret의 경계가 적절한가
+- Proxy가 허용된 route만 HTTPS upstream으로 전달하는가
 - 실제 운영 환경에서 발생하는 예외가 사용자에게 이해 가능한 상태로 표현되는가

@@ -82,9 +82,3 @@ export function buildAuthorizationHeader(
     Authorization: `${tokenType} ${tokens.accessToken}`,
   };
 }
-
-// Auth policy notes for the next integration step:
-// - Access token lifetime: 30 minutes.
-// - Refresh token lifetime: 7 days with rotation.
-// - Confirm whether refresh tokens should be stored in an httpOnly cookie or
-//   returned in JSON before wiring automatic refresh on 401 responses.

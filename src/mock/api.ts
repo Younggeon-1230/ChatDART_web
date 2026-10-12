@@ -32,6 +32,7 @@ export const mockLowOperatingCashFlowInterpretationResponse: InsightInterpretati
   {
     stock_code: "035420",
     interpretation_available: true,
+    primary_flag: null,
     interpretation: {
       headline: "영업활동현금흐름을 추가로 확인해 보세요.",
       positive: null,

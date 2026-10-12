@@ -49,6 +49,12 @@ import {
   type CompanyAnalysisTarget,
   buildCompanyAnalysisUrl,
 } from "@/lib/companySearch";
+import {
+  COLLECTION_MAX_POLLING_COUNT as MAX_STATUS_CHECK_COUNT,
+  COLLECTION_POLLING_INTERVAL_MS as POLLING_INTERVAL_MS,
+  COLLECTION_PROCESSING_MESSAGE as PROCESSING_STATUS_MESSAGE,
+  COLLECTION_TIMEOUT_MESSAGE as POLLING_TIMEOUT_MESSAGE,
+} from "@/lib/collectionPolicy";
 import { buildLoginHref } from "@/lib/authRedirect";
 import { addRecentCompany } from "@/lib/recentCompanies";
 import { transformSummaryApiToUi } from "@/lib/transform";
@@ -79,12 +85,6 @@ type AiReportViewState = {
   errorText: string;
 };
 
-const POLLING_INTERVAL_MS = 1500;
-const MAX_STATUS_CHECK_COUNT = 40;
-const POLLING_TIMEOUT_MESSAGE =
-  "아직 수집이 완료되지 않았습니다. 시간이 오래 걸리면 잠시 후 다시 검색하거나 새로고침해 주세요.";
-const PROCESSING_STATUS_MESSAGE =
-  "해당 기업의 재무 데이터를 준비하고 있습니다. 완료되면 자동으로 다시 불러옵니다.";
 const PROCESSING_STATUS_HELP_MESSAGE =
   "잠시 후 자동으로 다시 확인합니다. 시간이 오래 걸리면 새로고침하거나 다시 검색해 주세요.";
 const RATE_LIMIT_COOLDOWN_SECONDS = 60;

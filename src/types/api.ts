@@ -18,7 +18,15 @@ export type ApiDataSourceMeta = {
   __dataSource?: "api" | "api-partial" | "mock";
 };
 
+export type ApiErrorCode =
+  | "COLLECTION_REQUIRED"
+  | "COMPANY_NOT_FOUND"
+  | "COMPANY_DELISTED"
+  | "SERVICE_NOT_READY"
+  | (string & {});
+
 export type ApiErrorResponse = {
+  code?: ApiErrorCode;
   detail?:
     | string
     | Array<{
@@ -139,6 +147,13 @@ export type CollectStatus =
   | "completed"
   | "failed";
 
+export type SummaryDetailCollectionStatus =
+  | "pending"
+  | "processing"
+  | "completed"
+  | "failed"
+  | null;
+
 export type CollectionStatusResponseApi = ApiDataSourceMeta & {
   status: CollectStatus;
   resolved_code?: Nullable<string>;
@@ -222,7 +237,7 @@ export type TrendApiResponse = ApiDataSourceMeta & {
 export type SummaryDetailApiResponse = ApiDataSourceMeta & FinancialSectorMeta & {
   summary: CompanySummaryApiResponse;
   trend: TrendApiResponse;
-  collection_status: CollectStatus;
+  collection_status: SummaryDetailCollectionStatus;
   message?: Nullable<string>;
   collection_updated_at?: Nullable<string>;
 };
@@ -400,10 +415,16 @@ export type InsightInterpretationApi = {
   check_items: string[];
 };
 
+export type InsightPrimaryFlagApi = {
+  id: string;
+  year: number;
+};
+
 export type InsightInterpretationResponseApi = {
   stock_code: string;
   interpretation: InsightInterpretationApi | null;
   interpretation_available: boolean;
+  primary_flag: InsightPrimaryFlagApi | null;
 };
 
 export type FinancialDisclosureCategory =

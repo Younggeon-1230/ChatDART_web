@@ -109,10 +109,13 @@ Browser
 Next.js Frontend
   │
   ├─ Bearer Authentication
+  ├─ API facade + domain modules
   ├─ API response normalization
-  ├─ Collection-state handling
+  ├─ Detail / Summary collection flows
+  ├─ Structured error-code handling
   ├─ Error-state UX
-  └─ Responsive presentation
+  ├─ Responsive presentation
+  └─ Hardened same-origin Worker proxy
   │
   ▼
 Backend API
@@ -137,11 +140,11 @@ none → pending → processing → completed
                          └→ failed
 ```
 
-Frontend는 `collection_status`와 수집 상태 API를 기준으로 최초 수집, polling, 완료, 실패 흐름을 제어합니다.
+Frontend는 화면과 분리된 Detail·Summary lifecycle 모듈에서 `collection_status`와 수집 상태 API를 기준으로 최초 수집, polling, timeout, 완료, 실패 흐름을 제어합니다.
 
 ### 3. API 오류별 사용자 경험
 
-모든 실패를 하나의 오류 메시지로 처리하지 않고 인증, 데이터 수집, AI 처리 상황에 따라 다음 행동이 달라지도록 구성했습니다.
+모든 실패를 하나의 오류 메시지로 처리하지 않고 Backend의 structured error code를 우선 사용합니다. 이전 Backend 응답과의 호환성을 위해 데이터 수집 필요 상태에 한해서만 정확히 일치하는 legacy detail을 보조 판정으로 유지했습니다.
 
 - 인증 필요
 - 데이터 수집 필요
@@ -151,9 +154,15 @@ Frontend는 `collection_status`와 수집 상태 API를 기준으로 최초 수�
 
 ### 4. API 응답 정규화
 
-Backend 응답을 각 화면에서 직접 가공하지 않고 Frontend 변환·정규화 계층을 두어 API 계약과 UI 표시 로직을 분리했습니다.
+Backend 응답을 각 화면에서 직접 가공하지 않고 얇은 API facade와 account/auth/compare/discovery/finance/insights domain 모듈에 변환·정규화 계층을 두어 API 계약과 UI 표시 로직을 분리했습니다.
 
-### 5. 반응형 UI
+AI interpretation 응답의 `primary_flag`는 Backend가 선정한 `{ id, year }` metadata를 안전하게 파싱하되 Frontend에서 다시 계산하거나 배열 순서를 변경하지 않습니다.
+
+### 5. Same-origin Worker proxy
+
+브라우저 요청은 allowlist 기반 same-origin Worker route를 통해 Backend로 전달됩니다. Proxy는 path와 method를 정확히 검증하고 traversal·encoded separator를 차단하며 hop-by-hop header를 양방향에서 제거합니다. `Authorization`은 보존하고, server-only `UPSTREAM_API_ORIGIN`이 없거나 HTTPS가 아니면 upstream 요청 전에 fail-closed 처리합니다.
+
+### 6. 반응형 UI
 
 모바일부터 데스크톱까지 주요 화면의 레이아웃, 표·차트 overflow, 네비게이션을 점검했습니다.
 
@@ -199,10 +208,10 @@ npm install
 NEXT_PUBLIC_API_ORIGIN=http://localhost:8000
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
 NEXT_PUBLIC_API_V1_BASE_URL=http://localhost:8000/api/v1
-UPSTREAM_API_ORIGIN=http://localhost:8000
+UPSTREAM_API_ORIGIN=https://api.example.com
 ```
 
-실제 API Key, Token, Password 등의 비밀값은 저장소에 커밋하지 않습니다.
+`UPSTREAM_API_ORIGIN`은 Worker runtime 전용 server-side 변수이며 `NEXT_PUBLIC_` 접두사를 사용하지 않습니다. 실제 API Key, Token, Password 등의 비밀값은 저장소에 커밋하지 않습니다.
 
 ### 3. Run
 
@@ -223,7 +232,10 @@ npm test
 npm run lint
 npx tsc --noEmit --noUnusedLocals --noUnusedParameters
 npm run build
+npm run build:vinext
 ```
+
+현재 공개 snapshot은 API domain split, collection lifecycle, structured error compatibility, AI interpretation metadata, Worker proxy를 포함한 167개 regression test를 검증합니다.
 
 ## Repository Policy
 
@@ -235,6 +247,9 @@ npm run build
 - 실제 운영 인프라 주소 미포함
 - `.env` 계열 로컬 환경 파일 Git 제외
 - 공개 가능한 소스와 문서만 유지
+- Backend 저장소와 운영 설정은 비공개 유지
+
+운영 Worker 배포에는 별도로 준비된 HTTPS Backend origin이 필수입니다. HTTPS upstream이 준비되지 않은 환경에는 Worker를 배포할 수 없습니다.
 
 ## Project Background
 

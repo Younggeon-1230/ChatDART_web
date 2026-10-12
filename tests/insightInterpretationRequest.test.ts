@@ -121,3 +121,46 @@ test("keeps Samsung-like warning and newer positive signals in their contract bu
   assert.equal(payload.warning_flags[0]?.year, 2023);
   assert.equal(payload.positive_flags[0]?.year, 2025);
 });
+
+test("preserves bucket order and keeps the first duplicate insight ID", () => {
+  const firstWarning = makeInsight({
+    id: "duplicate-id",
+    type: "warning",
+    title: "first warning",
+  });
+  const firstPositive = makeInsight({
+    id: "positive-one",
+    type: "positive",
+  });
+  const duplicatePositive = makeInsight({
+    id: "duplicate-id",
+    type: "positive",
+    title: "later duplicate",
+  });
+  const secondWarning = makeInsight({
+    id: "warning-two",
+    type: "warning",
+  });
+
+  const payload = buildInsightInterpretationRequest({
+    stockCode: "005930",
+    company: "삼성전자",
+    latestYear: 2025,
+    insights: [
+      firstWarning,
+      firstPositive,
+      duplicatePositive,
+      secondWarning,
+    ],
+  });
+
+  assert.deepEqual(
+    payload.warning_flags.map((flag) => flag.id),
+    ["duplicate-id", "warning-two"]
+  );
+  assert.deepEqual(
+    payload.positive_flags.map((flag) => flag.id),
+    ["positive-one"]
+  );
+  assert.equal(payload.warning_flags[0]?.title, "first warning");
+});

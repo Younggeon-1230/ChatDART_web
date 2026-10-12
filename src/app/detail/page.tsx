@@ -11,16 +11,14 @@ import {
 import { useRouter, useSearchParams } from "next/navigation";
 import { FileBarChart2 } from "lucide-react";
 import { StatusBadge } from "@/components/common/Badge";
-import { InnerSurface, SectionCard, TableFrame } from "@/components/common/Card";
+import { SectionCard, TableFrame } from "@/components/common/Card";
 import ScrollTopButton from "@/components/common/ScrollTopButton";
 import { StatusState } from "@/components/common/StatusState";
 import PageFrame from "@/components/financial/PageFrame";
 import AiReportSlot, {
   type AiReportStatus,
 } from "@/components/financial/AiReportSlot";
-import AiInsightInterpretationSection, {
-  type AiInsightInterpretationStatus,
-} from "@/components/financial/AiInsightInterpretationSection";
+import AiInsightInterpretationSection from "@/components/financial/AiInsightInterpretationSection";
 import Box from "@/components/financial/Box";
 import CostCompositionChart from "@/components/financial/CostCompositionChart";
 import CostFlowChart from "@/components/financial/CostFlowChart";
@@ -37,24 +35,18 @@ import RelatedCompanyList from "@/components/financial/RelatedCompanyList";
 import CompanySearchBar, {
   type CompanySearchResult,
 } from "@/components/financial/CompanySearchBar";
-import { useDataSource } from "@/components/layout/DataSourceProvider";
-import { useMockAuth } from "@/hooks/useMockAuth";
+import { useDetailCollection } from "@/hooks/useDetailCollection";
+import { useInsightInterpretation } from "@/hooks/useInsightInterpretation";
 import {
   ENABLE_AI_ANALYSIS,
   getAiAnalysis,
   getAiAnalysisErrorMessage,
   getApiErrorStatus,
-  getFinanceServiceUnavailableKind,
   getFinancialDisclosures,
-  getInsightInterpretationRequestKey,
-  getSummaryDetail,
   getSimilarCompanies,
   getUserFriendlyApiErrorMessage,
-  interpretFinancialInsights,
   selectDisclosureRuleId,
-  startCollection,
 } from "@/lib/api";
-import { canUseFeature } from "@/lib/featureAccess";
 import {
   getFinancialStatusChipClass,
   getFinancialStatusTextClass,
@@ -71,7 +63,7 @@ import {
   type CompanyAnalysisTarget,
   buildCompanyAnalysisUrl,
 } from "@/lib/companySearch";
-import { probeDetailCollectionState } from "@/lib/detailCollectionFlow";
+import { DETAIL_COLLECTION_TIMEOUT_MESSAGE } from "@/lib/detailCollectionFlow";
 import {
   buildSummaryTextCards,
   getInvestmentMetricDescription,
@@ -102,29 +94,13 @@ import type {
   AiAnalysisResponse,
   CompanySummaryApiResponse,
   FinancialDisclosureApi,
-  InsightInterpretationApi,
   SimilarCompanyApi,
   YearlyDataApi,
 } from "@/types/api";
 
-type PageState =
-  | "idle"
-  | "collecting"
-  | "polling"
-  | "fetching"
-  | "completed"
-  | "timeout"
-  | "error";
-
 type AiReportViewState = {
   status: AiReportStatus;
   analysis: AiAnalysisResponse | null;
-  errorText: string;
-};
-
-type AiInsightInterpretationViewState = {
-  status: AiInsightInterpretationStatus;
-  interpretation: InsightInterpretationApi | null;
   errorText: string;
 };
 
@@ -168,25 +144,6 @@ type MetricFact = {
   value: string;
 };
 
-function getInsightInterpretationErrorMessage(error: unknown) {
-  const status = getApiErrorStatus(error);
-
-  switch (status) {
-    case 400:
-      return "AI 해석 요청 형식이 올바르지 않습니다.";
-    case 401:
-      return "로그인 상태를 확인해 주세요.";
-    case 422:
-      return "AI 해석에 필요한 신호 데이터가 올바르지 않습니다.";
-    case 429:
-      return "AI 해석 요청이 많아 현재 결과를 불러오지 못했습니다. 잠시 후 페이지를 다시 열어 주세요.";
-    default:
-      return error instanceof TypeError
-        ? "네트워크 연결을 확인한 뒤 다시 시도해 주세요."
-        : "AI 해석을 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.";
-  }
-}
-
 function getRelatedDisclosuresErrorMessage(error: unknown) {
   const status = getApiErrorStatus(error);
 
@@ -196,14 +153,6 @@ function getRelatedDisclosuresErrorMessage(error: unknown) {
   return error instanceof TypeError
     ? "네트워크 연결을 확인하고 다시 시도해 주세요."
     : "관련 공시를 불러오지 못했습니다. 잠시 후 다시 확인해 주세요.";
-}
-
-function createIdleAiInsightInterpretationState(): AiInsightInterpretationViewState {
-  return {
-    status: "idle",
-    interpretation: null,
-    errorText: "",
-  };
 }
 
 function createIdleRelatedDisclosuresState(): RelatedDisclosuresViewState {
@@ -223,12 +172,6 @@ type MetricInsightCardProps = {
   criteria?: string;
 };
 
-const POLLING_INTERVAL_MS = 1500;
-const MAX_STATUS_CHECK_COUNT = 40;
-const POLLING_TIMEOUT_MESSAGE =
-  "아직 수집이 완료되지 않았습니다. 시간이 오래 걸리면 잠시 후 다시 검색하거나 새로고침해 주세요.";
-const PROCESSING_STATUS_MESSAGE =
-  "해당 기업의 재무 데이터를 준비하고 있습니다. 완료되면 자동으로 다시 불러옵니다.";
 const CHART_GRID_CLASSNAME = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const DETAIL_SURFACE_CLASSNAME =
   "rounded-lg border border-sky-100 bg-sky-50/70 px-4 py-4";
@@ -252,12 +195,6 @@ function getComprehensiveStatusClassName(
     default:
       return "border-slate-200 bg-white text-slate-500";
   }
-}
-
-function waitForPollingInterval() {
-  return new Promise((resolve) => {
-    window.setTimeout(resolve, POLLING_INTERVAL_MS);
-  });
 }
 
 function toEokUnit(value: NumericValue) {
@@ -571,23 +508,6 @@ function MetricInsightCard({
   );
 }
 
-function FeatureLockedCard({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <Box className="p-6">
-      <SectionLabel>{title}</SectionLabel>
-      <InnerSurface className="px-4 py-5 text-sm leading-7 text-slate-600">
-        {description}
-      </InnerSurface>
-    </Box>
-  );
-}
-
 function DetailPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -604,23 +524,15 @@ function DetailPageContent() {
     }),
     [corpCode, displayName, keyword, stockCode]
   );
-  const { plan } = useMockAuth();
-  const canAccessDetail = canUseFeature(plan, "detailAnalysis");
-
-  const [pageState, setPageState] = useState<PageState>("idle");
-  const [summaryData, setSummaryData] =
-    useState<CompanySummaryApiResponse | null>(null);
-  const [message, setMessage] = useState("기업을 검색해 주세요.");
-  const [errorText, setErrorText] = useState("");
+  const { pageState, summaryData, message, errorText } = useDetailCollection({
+    keyword,
+    target: analysisTarget,
+  });
   const [aiReportState, setAiReportState] = useState<AiReportViewState>({
     status: "disabled",
     analysis: null,
     errorText: "",
   });
-  const [aiInsightInterpretationState, setAiInsightInterpretationState] =
-    useState<AiInsightInterpretationViewState>(
-      createIdleAiInsightInterpretationState
-    );
   const [relatedDisclosuresState, setRelatedDisclosuresState] =
     useState<RelatedDisclosuresViewState>(createIdleRelatedDisclosuresState);
   const [similarCompaniesStatus, setSimilarCompaniesStatus] =
@@ -630,42 +542,15 @@ function DetailPageContent() {
   );
   const [similarCompaniesErrorText, setSimilarCompaniesErrorText] =
     useState("");
-  const {
-    setBackendStatus,
-    setDataSource,
-    setIsRunningAnalysis,
-  } = useDataSource();
-
-  const pollingRef = useRef<NodeJS.Timeout | null>(null);
-  const isRequestingRef = useRef(false);
-  const statusCheckCountRef = useRef(0);
-  const activeRequestKeyRef = useRef("");
-  const activeAiInsightRequestKeyRef = useRef<string | null>(null);
-  const aiInsightRequestCacheRef = useRef(
-    new Map<
-      string,
-      AsyncSectionCacheEntry<AiInsightInterpretationViewState>
-    >()
-  );
   const activeRelatedDisclosuresRequestKeyRef = useRef<string | null>(null);
   const relatedDisclosuresRequestCacheRef = useRef(
     new Map<string, AsyncSectionCacheEntry<RelatedDisclosuresViewState>>()
   );
 
-  const resetAiInsightInterpretation = useCallback(() => {
-    activeAiInsightRequestKeyRef.current = null;
-    setAiInsightInterpretationState(createIdleAiInsightInterpretationState());
-  }, []);
-
   const resetRelatedDisclosures = useCallback(() => {
     activeRelatedDisclosuresRequestKeyRef.current = null;
     setRelatedDisclosuresState(createIdleRelatedDisclosuresState());
   }, []);
-
-  const resetInsightAsyncSections = useCallback(() => {
-    resetAiInsightInterpretation();
-    resetRelatedDisclosures();
-  }, [resetAiInsightInterpretation, resetRelatedDisclosures]);
 
   const isLoading =
     !!keyword &&
@@ -674,40 +559,12 @@ function DetailPageContent() {
     pageState !== "timeout" &&
     pageState !== "error";
 
-  function clearPolling() {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-    isRequestingRef.current = false;
-    statusCheckCountRef.current = 0;
-  }
-
-  const applyError = useCallback((
-    error: unknown,
-    fallbackMessage = "분석 정보를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요."
-  ) => {
-    const status = getApiErrorStatus(error);
-
-    setPageState("error");
-    setDataSource("none");
-    setBackendStatus(status === 408 ? "timeout" : "failed");
-    setIsRunningAnalysis(false);
-    setErrorText(getUserFriendlyApiErrorMessage(error, fallbackMessage));
-  }, [
-    setBackendStatus,
-    setDataSource,
-    setIsRunningAnalysis,
-  ]);
-
-  useEffect(() => {
-    return () => clearPolling();
-  }, []);
-
   useEffect(() => {
     let isMounted = true;
 
     if (!ENABLE_AI_ANALYSIS || pageState !== "completed" || !summaryData) {
+      // Existing reset branch intentionally synchronizes view state with Detail state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setAiReportState({
         status: "disabled",
         analysis: null,
@@ -757,6 +614,8 @@ function DetailPageContent() {
     let isMounted = true;
 
     if (pageState !== "completed" || !summaryData) {
+      // Existing reset branch intentionally synchronizes view state with Detail state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSimilarCompaniesStatus("idle");
       setSimilarCompanies([]);
       setSimilarCompaniesErrorText("");
@@ -816,288 +675,13 @@ function DetailPageContent() {
   }, [keyword, pageState, stockCode, summaryData]);
 
   useEffect(() => {
-    let isActive = true;
-    const requestKey = JSON.stringify({
-      keyword,
-      corpCode,
-      stockCode,
-      displayName,
+    if (pageState !== "completed" || !summaryData) return;
+
+    addRecentCompany({
+      name: summaryData.company_name,
+      stockCode: summaryData.stock_code,
     });
-    activeRequestKeyRef.current = requestKey;
-    resetInsightAsyncSections();
-    const isCurrentRequest = () =>
-      isActive && activeRequestKeyRef.current === requestKey;
-
-    if (!canAccessDetail) {
-      activeRequestKeyRef.current = "";
-      clearPolling();
-      setPageState("idle");
-      setSummaryData(null);
-      setErrorText("");
-      setMessage("상세 분석은 권한이 필요한 기능입니다.");
-      setDataSource("none");
-      setBackendStatus("idle");
-      setIsRunningAnalysis(false);
-      return;
-    }
-
-    if (!keyword) {
-      activeRequestKeyRef.current = "";
-      setPageState("idle");
-      setSummaryData(null);
-      setErrorText("");
-      setMessage("기업을 검색해 주세요.");
-      setDataSource("none");
-      setBackendStatus("idle");
-      setIsRunningAnalysis(false);
-      clearPolling();
-      return;
-    }
-
-    setSummaryData(null);
-    setErrorText("");
-    setMessage(`"${keyword}" 상세 분석 데이터를 확인하는 중입니다.`);
-    let shouldRequestCollection = false;
-    let hasRequestedCollection = false;
-
-    async function loadIntegratedDetail() {
-      const detailProbe = await probeDetailCollectionState(
-        analysisTarget,
-        getSummaryDetail
-      );
-
-      if (!isCurrentRequest()) return true;
-
-      if (detailProbe.kind === "needs_collection") {
-        shouldRequestCollection = !hasRequestedCollection;
-        setPageState(hasRequestedCollection ? "polling" : "collecting");
-        setBackendStatus("requesting");
-        setMessage(
-          hasRequestedCollection
-            ? PROCESSING_STATUS_MESSAGE
-            : "수집 이력이 없어 데이터 수집을 요청하는 중입니다."
-        );
-        return false;
-      }
-
-      const response = detailProbe.detail;
-
-      if (response.collection_status === "completed") {
-        shouldRequestCollection = false;
-        clearPolling();
-
-        if (response.__dataSource === "mock") {
-          setDataSource("mock");
-          setBackendStatus("fallback-mock");
-        } else {
-          setDataSource(response.__dataSource ?? "api");
-          setBackendStatus("success");
-        }
-
-        setIsRunningAnalysis(false);
-        addRecentCompany({
-          name: response.summary.company_name,
-          stockCode: response.summary.stock_code,
-        });
-        setSummaryData(response.summary);
-        setPageState("completed");
-        setMessage("상세 분석이 완료되었습니다.");
-        return true;
-      }
-
-      if (response.collection_status === "failed") {
-        shouldRequestCollection = false;
-        clearPolling();
-        setPageState("error");
-        setErrorText(
-          response.message ??
-            "데이터 수집에 실패했습니다. 잠시 후 다시 시도해 주세요."
-        );
-        setDataSource("none");
-        setBackendStatus("failed");
-        setIsRunningAnalysis(false);
-        return true;
-      }
-
-      if (statusCheckCountRef.current >= MAX_STATUS_CHECK_COUNT) {
-        clearPolling();
-        setPageState("timeout");
-        setBackendStatus("timeout");
-        setIsRunningAnalysis(false);
-        setMessage(POLLING_TIMEOUT_MESSAGE);
-        return true;
-      }
-
-      if (
-        response.collection_status === "pending" ||
-        response.collection_status === "processing"
-      ) {
-        shouldRequestCollection = false;
-        setPageState("polling");
-        setBackendStatus("requesting");
-        setMessage(PROCESSING_STATUS_MESSAGE);
-        return false;
-      }
-
-      if (response.collection_status && response.collection_status !== "none") {
-        shouldRequestCollection = false;
-        clearPolling();
-        setPageState("timeout");
-        setBackendStatus("timeout");
-        setIsRunningAnalysis(false);
-        setMessage(
-          "수집 상태를 확인할 수 없습니다. 잠시 후 다시 검색하거나 새로고침해 주세요."
-        );
-        return true;
-      }
-
-      shouldRequestCollection = !hasRequestedCollection;
-      setPageState(hasRequestedCollection ? "polling" : "collecting");
-      setBackendStatus("requesting");
-      setMessage(
-        hasRequestedCollection
-          ? PROCESSING_STATUS_MESSAGE
-          : "수집 이력이 없어 데이터 수집을 요청하는 중입니다."
-      );
-      return false;
-    }
-
-    async function pollIntegratedDetail() {
-      if (isRequestingRef.current || !isCurrentRequest()) return false;
-      isRequestingRef.current = true;
-
-      try {
-        statusCheckCountRef.current += 1;
-        return await loadIntegratedDetail();
-      } catch (error) {
-        if (!isCurrentRequest()) return true;
-        if (
-          getFinanceServiceUnavailableKind(error) === "loading" &&
-          statusCheckCountRef.current < MAX_STATUS_CHECK_COUNT
-        ) {
-          setPageState("polling");
-          setBackendStatus("requesting");
-          setMessage(getUserFriendlyApiErrorMessage(error));
-          return false;
-        }
-
-        clearPolling();
-        applyError(error, "상세 분석 상태 확인 중 오류가 발생했습니다.");
-        return true;
-      } finally {
-        isRequestingRef.current = false;
-      }
-    }
-
-    async function loadIntegratedDetailWithLoadingRetry() {
-      while (isCurrentRequest()) {
-        try {
-          return await loadIntegratedDetail();
-        } catch (error) {
-          if (
-            getFinanceServiceUnavailableKind(error) !== "loading" ||
-            statusCheckCountRef.current >= MAX_STATUS_CHECK_COUNT
-          ) {
-            throw error;
-          }
-
-          statusCheckCountRef.current += 1;
-          setPageState("polling");
-          setBackendStatus("requesting");
-          setMessage(getUserFriendlyApiErrorMessage(error));
-          await waitForPollingInterval();
-        }
-      }
-
-      return true;
-    }
-
-    async function startCollectionWithLoadingRetry() {
-      while (isCurrentRequest()) {
-        try {
-          return await startCollection(analysisTarget);
-        } catch (error) {
-          if (
-            getFinanceServiceUnavailableKind(error) !== "loading" ||
-            statusCheckCountRef.current >= MAX_STATUS_CHECK_COUNT
-          ) {
-            throw error;
-          }
-
-          statusCheckCountRef.current += 1;
-          setPageState("polling");
-          setBackendStatus("requesting");
-          setMessage(getUserFriendlyApiErrorMessage(error));
-          await waitForPollingInterval();
-        }
-      }
-
-      return null;
-    }
-
-    async function run() {
-      try {
-        setPageState("collecting");
-        setDataSource("none");
-        setBackendStatus("requesting");
-        setIsRunningAnalysis(true);
-        setPageState("fetching");
-        setMessage(`"${keyword}" 상세 분석 데이터를 불러오는 중입니다.`);
-
-        const isFinished = await loadIntegratedDetailWithLoadingRetry();
-
-        if (!isCurrentRequest() || isFinished) return;
-
-        if (shouldRequestCollection) {
-          const collectResponse = await startCollectionWithLoadingRetry();
-          if (!collectResponse) return;
-          if (!isCurrentRequest()) return;
-          hasRequestedCollection = true;
-          shouldRequestCollection = false;
-          setPageState("polling");
-          setMessage(
-            collectResponse.message ??
-              (collectResponse.status === "already_processing"
-                ? "이미 수집이 진행 중입니다. 완료되면 자동으로 다시 불러옵니다."
-                : `"${keyword}" 분석 상태를 확인 중입니다.`)
-          );
-        }
-
-        const isPollingFinished = await pollIntegratedDetail();
-
-        if (!isCurrentRequest() || isPollingFinished) return;
-
-        pollingRef.current = setInterval(() => {
-          void pollIntegratedDetail();
-        }, POLLING_INTERVAL_MS);
-      } catch (error) {
-        if (!isCurrentRequest()) return;
-        applyError(error, "상세 분석 요청 처리 중 오류가 발생했습니다.");
-      }
-    }
-
-    void run();
-
-    return () => {
-      isActive = false;
-      if (activeRequestKeyRef.current === requestKey) {
-        activeRequestKeyRef.current = "";
-      }
-      clearPolling();
-    };
-  }, [
-    applyError,
-    analysisTarget,
-    canAccessDetail,
-    corpCode,
-    displayName,
-    keyword,
-    resetInsightAsyncSections,
-    setBackendStatus,
-    setDataSource,
-    setIsRunningAnalysis,
-    stockCode,
-  ]);
+  }, [pageState, summaryData]);
 
   function handleCompanySelect(company: CompanySearchResult) {
     router.push(buildCompanyAnalysisUrl("/detail", company));
@@ -1300,110 +884,20 @@ function DetailPageContent() {
 
   const hasChartData = chartData.length > 0;
   const latestData = getLatestValue(chartData);
-
-  useEffect(() => {
-    let isMounted = true;
-    const requestStockCode = summaryData?.stock_code.trim() ?? "";
-    const requestCompany = summaryData?.company_name.trim() ?? "";
-    const requestLatestYear = latestData?.fiscal_year ?? summaryData?.fiscal_year;
-
-    const requestInput = {
-      stockCode: requestStockCode,
-      company: requestCompany,
-      latestYear: requestLatestYear ?? 0,
+  const insightInterpretationInput = useMemo(
+    () => ({
+      enabled: pageState === "completed",
+      isFinancialSector,
+      stockCode: summaryData?.stock_code,
+      company: summaryData?.company_name,
+      latestYear: latestData?.fiscal_year ?? summaryData?.fiscal_year,
       insights: financialInsights,
-    };
-    const requestKey = getInsightInterpretationRequestKey(requestInput);
-
-    if (
-      pageState !== "completed" ||
-      isFinancialSector ||
-      !requestStockCode ||
-      !requestCompany ||
-      !requestLatestYear ||
-      !requestKey
-    ) {
-      resetAiInsightInterpretation();
-      return;
-    }
-
-    activeAiInsightRequestKeyRef.current = requestKey;
-    let cacheEntry = aiInsightRequestCacheRef.current.get(requestKey);
-
-    if (!cacheEntry) {
-      const promise = interpretFinancialInsights({
-        ...requestInput,
-        latestYear: requestLatestYear,
-      })
-        .then<AiInsightInterpretationViewState>((response) => {
-          if (
-            !response ||
-            !response.interpretation_available ||
-            !response.interpretation
-          ) {
-            return {
-              status: "fallback",
-              interpretation: null,
-              errorText: "",
-            };
-          }
-
-          return {
-            status: "success",
-            interpretation: response.interpretation,
-            errorText: "",
-          };
-        })
-        .catch<AiInsightInterpretationViewState>((error) => ({
-          status: "error",
-          interpretation: null,
-          errorText: getInsightInterpretationErrorMessage(error),
-        }));
-
-      cacheEntry = { promise };
-      aiInsightRequestCacheRef.current.set(requestKey, cacheEntry);
-
-      void promise.then((result) => {
-        const currentEntry = aiInsightRequestCacheRef.current.get(requestKey);
-
-        if (currentEntry?.promise === promise) {
-          currentEntry.result = result;
-        }
-      });
-    }
-
-    if (cacheEntry.result) {
-      setAiInsightInterpretationState(cacheEntry.result);
-    } else {
-      setAiInsightInterpretationState({
-        status: "loading",
-        interpretation: null,
-        errorText: "",
-      });
-
-      void cacheEntry.promise.then((result) => {
-        if (
-          !isMounted ||
-          activeAiInsightRequestKeyRef.current !== requestKey
-        ) {
-          return;
-        }
-
-        setAiInsightInterpretationState(result);
-      });
-    }
-
-    return () => {
-      isMounted = false;
-    };
-  }, [
-    financialInsights,
-    isFinancialSector,
-    latestData,
-    pageState,
-    resetAiInsightInterpretation,
-    summaryData,
-  ]);
+    }),
+    [financialInsights, isFinancialSector, latestData, pageState, summaryData]
+  );
+  const aiInsightInterpretationState = useInsightInterpretation(
+    insightInterpretationInput
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -1415,6 +909,8 @@ function DetailPageContent() {
         : null;
 
     if (pageState !== "completed" || !requestKey) {
+      // Existing reset branch intentionally synchronizes view state with Detail state.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       resetRelatedDisclosures();
       return;
     }
@@ -1720,12 +1216,7 @@ function DetailPageContent() {
             placeholder="상세 분석할 기업명 또는 종목코드를 입력하세요"
           />
 
-          {!canAccessDetail ? (
-            <FeatureLockedCard
-              title="상세 분석 이용 안내"
-              description="상세 분석은 로그인 후 이용할 수 있습니다."
-            />
-          ) : !keyword ? (
+          {!keyword ? (
             <Box className="p-6">
               <StatusState
                 variant="info"
@@ -1735,7 +1226,7 @@ function DetailPageContent() {
             </Box>
           ) : null}
 
-          {canAccessDetail && isLoading && (
+          {isLoading && (
             <Box className="p-10 text-center">
               <StatusState
                 variant="loading"
@@ -1746,7 +1237,7 @@ function DetailPageContent() {
             </Box>
           )}
 
-          {canAccessDetail && pageState === "error" && (
+          {pageState === "error" && (
             <Box className="p-10 text-center">
               <StatusState
                 variant="error"
@@ -1757,18 +1248,18 @@ function DetailPageContent() {
             </Box>
           )}
 
-          {canAccessDetail && pageState === "timeout" && (
+          {pageState === "timeout" && (
             <Box className="p-10 text-center">
               <StatusState
                 variant="warning"
                 title="아직 수집이 완료되지 않았습니다"
-                description={message || POLLING_TIMEOUT_MESSAGE}
+                description={message || DETAIL_COLLECTION_TIMEOUT_MESSAGE}
                 className="text-left"
               />
             </Box>
           )}
 
-          {canAccessDetail && summaryData && (
+          {summaryData && (
             <>
               <Box className="p-6">
                 <div className="flex flex-wrap items-start justify-between gap-3">

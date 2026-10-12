@@ -5,7 +5,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const projectRoot = resolvePath(dirname(fileURLToPath(import.meta.url)), "..");
 
 function resolveTypeScriptFile(path) {
-  const candidates = [path, `${path}.ts`, `${path}.tsx`];
+  const candidates = [`${path}.ts`, `${path}.tsx`, path];
   const resolved = candidates.find((candidate) => existsSync(candidate));
 
   return resolved ? pathToFileURL(resolved).href : null;

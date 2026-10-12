@@ -1,11 +1,15 @@
-import type { ApiErrorResponse } from "@/types/api";
+import type { ApiErrorCode, ApiErrorResponse } from "@/types/api";
 
 type ErrorWithStatus = Error & {
+  code?: ApiErrorCode;
+  detail?: ApiErrorResponse["detail"];
   status?: number;
   userMessage?: string;
 };
 
 type ParsedApiError = {
+  code?: ApiErrorCode;
+  detail?: ApiErrorResponse["detail"];
   message: string;
   validationMessages: string[];
 };
@@ -17,6 +21,7 @@ export type FinanceServiceUnavailableKind =
 
 const DEFAULT_API_ERROR_MESSAGE =
   "데이터를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.";
+const COLLECTION_REQUIRED_DETAIL_MESSAGE = "데이터 수집이 필요합니다.";
 
 function cleanMessage(value: unknown) {
   return typeof value === "string" && value.trim() ? value.trim() : "";
@@ -31,12 +36,17 @@ export function parseApiErrorBody(errorBody: unknown): ParsedApiError {
   }
 
   const body = errorBody as ApiErrorResponse;
+  const code =
+    typeof body.code === "string" && body.code.trim()
+      ? body.code
+      : undefined;
+  const detail = body.detail;
   const validationMessages: string[] = [];
 
   if (typeof body.detail === "string") {
     const detail = cleanMessage(body.detail);
     if (detail) {
-      return { message: detail, validationMessages };
+      return { code, detail: body.detail, message: detail, validationMessages };
     }
   }
 
@@ -48,6 +58,8 @@ export function parseApiErrorBody(errorBody: unknown): ParsedApiError {
 
     if (validationMessages.length > 0) {
       return {
+        code,
+        detail,
         message: validationMessages[0],
         validationMessages,
       };
@@ -61,9 +73,37 @@ export function parseApiErrorBody(errorBody: unknown): ParsedApiError {
     "";
 
   return {
+    code,
+    detail,
     message,
     validationMessages,
   };
+}
+
+export function getApiErrorCode(error: unknown) {
+  const code = (error as { code?: unknown })?.code;
+  return typeof code === "string" && code.trim()
+    ? (code as ApiErrorCode)
+    : undefined;
+}
+
+export function isCollectionRequiredError(error: unknown) {
+  const code = getApiErrorCode(error);
+
+  if (code) {
+    return code === "COLLECTION_REQUIRED";
+  }
+
+  const err = error as Partial<ErrorWithStatus>;
+  const detail =
+    typeof err.detail === "string" ? err.detail : err.userMessage;
+
+  // Migration compatibility: prefer backend code, then accept only the
+  // legacy exact 404 detail when an older backend does not provide a code.
+  return (
+    getApiErrorStatus(error) === 404 &&
+    detail === COLLECTION_REQUIRED_DETAIL_MESSAGE
+  );
 }
 
 export function getApiErrorStatus(error: unknown) {

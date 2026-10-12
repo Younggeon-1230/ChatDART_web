@@ -4,6 +4,7 @@ import Box from "@/components/financial/Box";
 import SectionLabel from "@/components/financial/SectionLabel";
 import { cn } from "@/lib/classNames";
 import {
+  formatPercent,
   formatRatio,
   formatSignedPercent,
   type NumericValue,
@@ -44,17 +45,6 @@ const GROUPS: InsightGroupConfig[] = [
   },
 ];
 
-function formatPercentValue(
-  value: number | null | undefined,
-  fractionDigits = 1
-) {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "-";
-  }
-
-  return `${value.toFixed(fractionDigits)}%`;
-}
-
 function formatRatioValue(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "-";
@@ -70,7 +60,7 @@ function formatEvidenceValue(
 ) {
   if (evidence.unit === "currency") return currencyFormatter(value);
   if (evidence.unit === "percent") {
-    return formatPercentValue(value, evidence.displayFractionDigits);
+    return formatPercent(value, evidence.displayFractionDigits ?? 1);
   }
   if (evidence.unit === "ratio") return formatRatioValue(value);
   return value === null || value === undefined || !Number.isFinite(value)
