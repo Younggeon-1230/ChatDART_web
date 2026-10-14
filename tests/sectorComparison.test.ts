@@ -1,7 +1,16 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { buildSectorComparisonItems } from "@/lib/sectorComparison";
+import {
+  buildSectorComparisonItems,
+  getSectorComparisonValueTone,
+} from "@/lib/sectorComparison";
 import type { SectorAverageApi } from "@/types/api";
+
+const SECTOR_COMPARISON_COMPONENT_PATH = new URL(
+  "../src/components/financial/SectorComparisonSection.tsx",
+  import.meta.url
+);
 
 const companyMetrics = {
   revenue_growth_rate: 12.5,
@@ -161,4 +170,58 @@ test("유효하지 않은 rank나 표본 합계는 표시 데이터로 사용하
 
   assert.equal(result[0]?.rank, 3);
   assert.equal(result[0]?.totalCompanies, null);
+});
+
+test("수익성 지표가 업종 평균보다 높으면 positive tone을 사용한다", () => {
+  assert.equal(
+    getSectorComparisonValueTone("operating_margin", 18.2, 16.3),
+    "positive"
+  );
+});
+
+test("수익성 지표가 업종 평균보다 낮으면 caution tone을 사용한다", () => {
+  assert.equal(
+    getSectorComparisonValueTone("roe", 10.1, 12.1),
+    "caution"
+  );
+});
+
+test("수익성 지표가 업종 평균과 같으면 neutral tone을 사용한다", () => {
+  assert.equal(
+    getSectorComparisonValueTone("net_margin", 14.1, 14.1),
+    "neutral"
+  );
+});
+
+test("부채비율은 평균보다 높거나 낮아도 neutral tone을 유지한다", () => {
+  assert.equal(
+    getSectorComparisonValueTone("debt_ratio", 130, 100),
+    "neutral"
+  );
+  assert.equal(
+    getSectorComparisonValueTone("debt_ratio", 70, 100),
+    "neutral"
+  );
+});
+
+test("비교할 수 없는 값은 neutral tone을 사용한다", () => {
+  assert.equal(
+    getSectorComparisonValueTone("roa", null, 8),
+    "neutral"
+  );
+  assert.equal(
+    getSectorComparisonValueTone("roa", 8, undefined),
+    "neutral"
+  );
+  assert.equal(
+    getSectorComparisonValueTone("roa", Number.NaN, 8),
+    "neutral"
+  );
+});
+
+test("rank 데이터 계약은 유지하되 rank 문구는 UI에 렌더링하지 않는다", async () => {
+  const source = await readFile(SECTOR_COMPARISON_COMPONENT_PATH, "utf8");
+
+  assert.doesNotMatch(source, /개 기업 중|업종 내 .*위/);
+  assert.doesNotMatch(source, /item\.rank|item\.totalCompanies/);
 });

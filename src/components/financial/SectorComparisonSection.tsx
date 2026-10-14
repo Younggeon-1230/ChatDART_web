@@ -1,7 +1,11 @@
 import Box from "@/components/financial/Box";
 import SectionLabel from "@/components/financial/SectionLabel";
 import { formatPercent, formatSignedPercent } from "@/lib/format";
-import type { SectorComparisonItem } from "@/lib/sectorComparison";
+import {
+  getSectorComparisonValueTone,
+  type SectorComparisonItem,
+  type SectorComparisonValueTone,
+} from "@/lib/sectorComparison";
 
 type SectorComparisonSectionProps = {
   items: SectorComparisonItem[];
@@ -13,6 +17,15 @@ function formatMetricValue(item: SectorComparisonItem, value: number) {
     ? formatSignedPercent(value, 1)
     : formatPercent(value, 1);
 }
+
+const COMPANY_VALUE_TONE_CLASS: Record<
+  SectorComparisonValueTone,
+  string
+> = {
+  positive: "text-emerald-700",
+  caution: "text-amber-700",
+  neutral: "text-slate-950",
+};
 
 export default function SectorComparisonSection({
   items,
@@ -36,38 +49,41 @@ export default function SectorComparisonSection({
         )}
       </div>
 
-      <div className="mt-5 grid min-w-0 grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
-        {items.map((item) => (
-          <article
-            key={item.key}
-            className="min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-4"
-          >
-            <h3 className="break-words text-sm font-semibold text-slate-950">
-              {item.label}
-            </h3>
-            <dl className="mt-3 space-y-2 text-sm">
-              <div className="flex min-w-0 items-baseline justify-between gap-3">
-                <dt className="shrink-0 text-slate-500">회사</dt>
-                <dd className="min-w-0 break-words text-right font-semibold text-slate-950">
-                  {formatMetricValue(item, item.companyValue)}
-                </dd>
-              </div>
-              <div className="flex min-w-0 items-baseline justify-between gap-3">
-                <dt className="shrink-0 text-slate-500">업종 평균</dt>
-                <dd className="min-w-0 break-words text-right font-semibold text-slate-950">
-                  {formatMetricValue(item, item.sectorAverage)}
-                </dd>
-              </div>
-            </dl>
-            {item.rank !== null && (
-              <p className="mt-3 border-t border-slate-100 pt-3 text-xs text-slate-500">
-                {item.totalCompanies !== null
-                  ? `${item.totalCompanies}개 기업 중 ${item.rank}위`
-                  : `업종 내 ${item.rank}위`}
-              </p>
-            )}
-          </article>
-        ))}
+      <div className="mt-5 grid min-w-0 grid-cols-1 items-stretch gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {items.map((item) => {
+          const companyValueTone = getSectorComparisonValueTone(
+            item.key,
+            item.companyValue,
+            item.sectorAverage
+          );
+
+          return (
+            <article
+              key={item.key}
+              className="h-full min-w-0 rounded-xl border border-slate-200 bg-white px-4 py-4"
+            >
+              <h3 className="break-words text-sm font-semibold text-slate-950">
+                {item.label}
+              </h3>
+              <dl className="mt-3 space-y-2 text-sm">
+                <div className="flex min-w-0 items-baseline justify-between gap-3">
+                  <dt className="shrink-0 text-slate-500">회사</dt>
+                  <dd
+                    className={`min-w-0 break-words text-right font-semibold ${COMPANY_VALUE_TONE_CLASS[companyValueTone]}`}
+                  >
+                    {formatMetricValue(item, item.companyValue)}
+                  </dd>
+                </div>
+                <div className="flex min-w-0 items-baseline justify-between gap-3">
+                  <dt className="shrink-0 text-slate-500">업종 평균</dt>
+                  <dd className="min-w-0 break-words text-right font-semibold text-slate-950">
+                    {formatMetricValue(item, item.sectorAverage)}
+                  </dd>
+                </div>
+              </dl>
+            </article>
+          );
+        })}
       </div>
     </Box>
   );

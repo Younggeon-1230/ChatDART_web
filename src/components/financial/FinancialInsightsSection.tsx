@@ -9,10 +9,11 @@ import {
   formatSignedPercent,
   type NumericValue,
 } from "@/lib/format";
-import type {
-  FinancialInsight,
-  FinancialInsightEvidence,
-  FinancialInsightType,
+import {
+  sortFinancialInsightCardsForDisplay,
+  type FinancialInsight,
+  type FinancialInsightEvidence,
+  type FinancialInsightType,
 } from "@/lib/financialInsights";
 
 type FinancialInsightsSectionProps = {
@@ -20,30 +21,24 @@ type FinancialInsightsSectionProps = {
   currencyFormatter: (value: NumericValue) => string;
 };
 
-type InsightGroupConfig = {
-  type: FinancialInsightType;
-  title: string;
+type InsightCardConfig = {
   label: string;
   tone: "warning" | "success";
   icon: typeof AlertTriangle;
 };
 
-const GROUPS: InsightGroupConfig[] = [
-  {
-    type: "warning",
-    title: "주의해서 볼 흐름",
-    label: "주의",
+const INSIGHT_TYPE_CONFIG: Record<FinancialInsightType, InsightCardConfig> = {
+  warning: {
+    label: "주의해서 볼 흐름",
     tone: "warning",
     icon: AlertTriangle,
   },
-  {
-    type: "positive",
-    title: "긍정적으로 볼 흐름",
-    label: "긍정",
+  positive: {
+    label: "긍정적으로 볼 흐름",
     tone: "success",
     icon: TrendingUp,
   },
-];
+};
 
 function formatRatioValue(value: number | null | undefined) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -159,7 +154,7 @@ function FinancialInsightCard({
   currencyFormatter,
 }: {
   insight: FinancialInsight;
-  group: InsightGroupConfig;
+  group: InsightCardConfig;
   currencyFormatter: (value: NumericValue) => string;
 }) {
   const Icon = group.icon;
@@ -215,10 +210,19 @@ export default function FinancialInsightsSection({
 }: FinancialInsightsSectionProps) {
   if (insights.length === 0) return null;
 
-  const groupedInsights = GROUPS.map((group) => ({
-    ...group,
-    insights: insights.filter((insight) => insight.type === group.type),
-  }));
+  const insightsByYear = sortFinancialInsightCardsForDisplay(insights).reduce<
+    Array<{ year: FinancialInsight["year"]; insights: FinancialInsight[] }>
+  >((groups, insight) => {
+    const currentGroup = groups.at(-1);
+
+    if (currentGroup && String(currentGroup.year) === String(insight.year)) {
+      currentGroup.insights.push(insight);
+    } else {
+      groups.push({ year: insight.year, insights: [insight] });
+    }
+
+    return groups;
+  }, []);
 
   return (
     <Box className="p-4 sm:p-6">
@@ -227,37 +231,29 @@ export default function FinancialInsightsSection({
         최근 재무 흐름을 규칙 기반으로 분석한 참고 정보입니다. 실제 원인은 세부 재무 항목과 공시 내용을 함께 확인해야 합니다.
       </p>
 
-      <div className="mt-5 space-y-6">
-        {groupedInsights.map((group) => (
-          <section key={group.type} aria-labelledby={`${group.type}-insights`}>
-            <div className="flex flex-wrap items-center gap-2">
+      <div className="mt-5 space-y-7">
+        {insightsByYear.map(({ year, insights: yearInsights }) => (
+          <section key={String(year)} aria-labelledby={`insights-${year}`}>
+            <div className="flex items-center gap-3">
               <h3
-                id={`${group.type}-insights`}
-                className="text-sm font-semibold text-slate-900"
+                id={`insights-${year}`}
+                className="inline-flex shrink-0 items-center rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-base font-bold text-blue-950"
               >
-                {group.title}
+                {String(year).endsWith("년") ? year : `${year}년`}
               </h3>
-              <StatusBadge tone={group.tone}>
-                {group.insights.length}개
-              </StatusBadge>
+              <span className="h-px flex-1 bg-slate-200" aria-hidden="true" />
             </div>
 
-            {group.insights.length === 0 ? (
-              <p className="mt-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-500">
-                현재 규칙에 해당하는 {group.label} 신호가 없습니다.
-              </p>
-            ) : (
-              <ul className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-                {group.insights.map((insight) => (
-                  <FinancialInsightCard
-                    key={`${insight.type}-${insight.id}-${insight.year}`}
-                    insight={insight}
-                    group={group}
-                    currencyFormatter={currencyFormatter}
-                  />
-                ))}
-              </ul>
-            )}
+            <ul className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
+              {yearInsights.map((insight) => (
+                <FinancialInsightCard
+                  key={`${insight.type}-${insight.id}-${insight.year}`}
+                  insight={insight}
+                  group={INSIGHT_TYPE_CONFIG[insight.type]}
+                  currencyFormatter={currencyFormatter}
+                />
+              ))}
+            </ul>
           </section>
         ))}
       </div>

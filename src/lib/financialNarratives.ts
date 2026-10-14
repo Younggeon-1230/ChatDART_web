@@ -212,6 +212,185 @@ function getLatestMargin(item: YearlyDataApi | null, key: "operating_margin" | "
   );
 }
 
+type MarginDirection = "improving" | "weakening" | "stable" | "mixed" | "missing";
+
+function getMarginDirection(
+  latest: YearlyDataApi,
+  previous: YearlyDataApi | null
+): MarginDirection {
+  if (!previous) return "missing";
+
+  const comparisons = (["operating_margin", "net_margin"] as const).flatMap(
+    (key) => {
+      const current = getLatestMargin(latest, key);
+      const prior = getLatestMargin(previous, key);
+      return current === null || prior === null ? [] : [current - prior];
+    }
+  );
+
+  if (comparisons.length === 0) return "missing";
+  if (comparisons.every((change) => change === 0)) return "stable";
+  if (
+    comparisons.every((change) => change >= 0) &&
+    comparisons.some((change) => change > 0)
+  ) {
+    return "improving";
+  }
+  if (
+    comparisons.every((change) => change <= 0) &&
+    comparisons.some((change) => change < 0)
+  ) {
+    return "weakening";
+  }
+  return "mixed";
+}
+
+function formatMarginSummary(latest: YearlyDataApi) {
+  const margins = [
+    ["영업이익률", getLatestMargin(latest, "operating_margin")],
+    ["순이익률", getLatestMargin(latest, "net_margin")],
+  ] as const;
+
+  return margins
+    .flatMap(([label, value]) =>
+      value === null ? [] : [`${label} ${formatFinancialPercent(value)}`]
+    )
+    .join(", ");
+}
+
+export function buildProfitabilityGrowthSummary(
+  latest: YearlyDataApi,
+  previous: YearlyDataApi | null
+) {
+  const revenueGrowth = calculateFinancialGrowth(
+    latest.revenue,
+    previous?.revenue
+  );
+  const marginSummary = formatMarginSummary(latest);
+  const marginDirection = getMarginDirection(latest, previous);
+  const revenueDirection =
+    revenueGrowth === null
+      ? "missing"
+      : revenueGrowth > 0
+        ? "growth"
+        : revenueGrowth < 0
+          ? "decline"
+          : "stable";
+
+  let currentState: string;
+  if (revenueGrowth !== null && marginSummary) {
+    const revenueText = formatFinancialPercent(Math.abs(revenueGrowth));
+    currentState =
+      revenueDirection === "growth"
+        ? `매출은 전년 대비 ${revenueText} 증가했고, ${marginSummary}를 기록했습니다.`
+        : revenueDirection === "decline"
+          ? `매출은 전년 대비 ${revenueText} 감소했고, ${marginSummary}를 기록했습니다.`
+          : `매출은 전년과 비슷한 수준이며, ${marginSummary}를 기록했습니다.`;
+  } else if (revenueGrowth !== null) {
+    const revenueText = formatFinancialPercent(Math.abs(revenueGrowth));
+    currentState =
+      revenueDirection === "growth"
+        ? `매출은 전년 대비 ${revenueText} 증가했습니다.`
+        : revenueDirection === "decline"
+          ? `매출은 전년 대비 ${revenueText} 감소했습니다.`
+          : "매출은 전년과 비슷한 수준입니다.";
+  } else if (marginSummary) {
+    currentState = `${marginSummary}를 기록했습니다.`;
+  } else {
+    return "수익성/성장률 데이터가 충분하지 않아 매출과 이익률의 관계를 해석하기 어렵습니다.";
+  }
+
+  let relationship: string;
+  if (revenueDirection === "growth" && marginDirection === "improving") {
+    relationship = "외형 성장과 수익성 개선이 함께 나타나는 흐름입니다.";
+  } else if (
+    revenueDirection === "growth" &&
+    marginDirection === "weakening"
+  ) {
+    relationship =
+      "외형은 성장했지만 이익률은 낮아져 성장만큼 수익성이 따라오지 못하는 흐름입니다. 비용 부담의 변화를 함께 확인할 필요가 있습니다.";
+  } else if (
+    revenueDirection === "growth" &&
+    marginDirection === "stable"
+  ) {
+    relationship =
+      "외형이 성장하는 동안 주요 이익률은 유지되어 수익성을 방어한 흐름입니다.";
+  } else if (
+    revenueDirection === "decline" &&
+    (marginDirection === "improving" || marginDirection === "stable")
+  ) {
+    relationship =
+      "외형은 감소했지만 이익률은 유지되거나 높아져 수익성 방어가 두드러집니다.";
+  } else if (
+    revenueDirection === "decline" &&
+    marginDirection === "weakening"
+  ) {
+    relationship =
+      "매출과 주요 이익률이 함께 낮아져 외형과 수익성이 동반 약화되는 흐름입니다.";
+  } else if (marginDirection === "mixed") {
+    relationship =
+      "영업이익률과 순이익률의 방향이 엇갈려 수익성 흐름을 한 방향으로 단정하기 어렵습니다.";
+  } else if (marginDirection === "improving") {
+    relationship =
+      "주요 이익률은 전년보다 높아졌지만 외형 흐름은 별도로 확인할 필요가 있습니다.";
+  } else if (marginDirection === "weakening") {
+    relationship =
+      "주요 이익률은 전년보다 낮아졌으며 외형 흐름과 함께 원인을 확인할 필요가 있습니다.";
+  } else if (marginDirection === "stable") {
+    relationship =
+      "주요 이익률은 전년과 비슷하게 유지됐으며 외형 흐름과 함께 해석할 필요가 있습니다.";
+  } else if (marginSummary) {
+    relationship =
+      "현재 이익률 수준은 확인되지만 수익성의 개선 여부는 비교 가능한 전년 자료와 함께 판단해야 합니다.";
+  } else {
+    relationship =
+      "이익률 데이터가 제한적이어서 외형 변화가 수익성으로 이어졌는지는 추가 확인이 필요합니다.";
+  }
+
+  return `${currentState} ${relationship}`;
+}
+
+export function buildFinancialPositionSummary(latest: YearlyDataApi) {
+  const assets = toFinancialNumber(latest.total_assets, { allowNegative: true });
+  const liabilities = toFinancialNumber(latest.total_liabilities, {
+    allowNegative: true,
+  });
+  const equity = toFinancialNumber(latest.equity, { allowNegative: true });
+  const availableValues = [
+    assets === null ? null : `자산 ${formatFinancialAmount(assets)}`,
+    liabilities === null ? null : `부채 ${formatFinancialAmount(liabilities)}`,
+    equity === null ? null : `자본 ${formatFinancialAmount(equity)}`,
+  ].filter((value): value is string => value !== null);
+
+  if (availableValues.length === 0) {
+    return "자산, 부채, 자본 데이터가 충분하지 않아 재무 구조 해석에는 추가 자료 확인이 필요합니다.";
+  }
+
+  const valuesText = availableValues.join(", ");
+  if (liabilities === null || equity === null) {
+    return `${valuesText} 수준입니다. 부채와 자본의 관계를 판단할 데이터가 충분하지 않아 자본조달 구조 해석은 제한적입니다.`;
+  }
+
+  const liabilitiesText = formatFinancialAmount(liabilities);
+  const equityText = formatFinancialAmount(equity);
+  const fundingValues =
+    assets === null
+      ? `자본 ${equityText}, 부채 ${liabilitiesText}입니다.`
+      : `자산 ${formatFinancialAmount(
+          assets
+        )} 중 자본 ${equityText}, 부채 ${liabilitiesText}입니다.`;
+
+  if (equity > liabilities) {
+    return `${fundingValues} 자본이 부채보다 큰 구조로 자기자본 비중이 상대적으로 크며, 부채 수준은 업종 특성과 함께 확인할 필요가 있습니다.`;
+  }
+
+  if (liabilities > equity) {
+    return `${fundingValues} 부채 비중이 자본보다 큰 구조이며, 이는 업종 특성과 함께 해석할 필요가 있습니다.`;
+  }
+
+  return `${fundingValues} 부채와 자본이 같은 규모로 자산을 구성하며, 그 비중은 업종 특성과 함께 해석할 필요가 있습니다.`;
+}
+
 export function getDebtRatio(item: YearlyDataApi | null) {
   return calculateDebtRatio(item);
 }
@@ -373,13 +552,6 @@ export function buildSummaryTextCards(history: YearlyDataApi[]): SummaryTextCard
     return [{ title: "데이터 없음", content: MISSING_DATA_TEXT }];
   }
 
-  const operatingMargin = getLatestMargin(latest, "operating_margin");
-  const netMargin = getLatestMargin(latest, "net_margin");
-  const revenueGrowth = calculateFinancialGrowth(
-    latest.revenue,
-    previous?.revenue
-  );
-
   return [
     {
       title: "손익 요약",
@@ -398,27 +570,11 @@ export function buildSummaryTextCards(history: YearlyDataApi[]): SummaryTextCard
     },
     {
       title: "수익성/성장률 요약",
-      content: hasData(revenueGrowth, operatingMargin, netMargin)
-        ? `매출 성장률 ${formatFinancialPercent(
-            revenueGrowth
-          )}, 영업이익률 ${formatOptionalPercent(
-            operatingMargin
-          )}, 순이익률 ${formatOptionalPercent(
-            netMargin
-          )}을 함께 보면 외형 성장과 실제 수익성의 동행 여부를 참고할 수 있습니다.`
-        : "수익성/성장률 데이터가 충분하지 않아 매출, 영업이익, 순이익의 최근 흐름을 추가로 확인할 필요가 있습니다.",
+      content: buildProfitabilityGrowthSummary(latest, previous),
     },
     {
       title: "재무 상태 요약",
-      content: hasData(latest.total_assets, latest.total_liabilities, latest.equity)
-        ? `자산 ${formatOptionalAmount(
-            latest.total_assets
-          )}, 부채 ${formatOptionalAmount(
-            latest.total_liabilities
-          )}, 자본 ${formatOptionalAmount(
-            latest.equity
-          )} 수준입니다. 자산 증가가 부채 증가에 지나치게 의존하지 않는지 점검할 필요가 있습니다.`
-        : "자산, 부채, 자본 데이터가 충분하지 않아 재무 구조 해석에는 추가 자료 확인이 필요합니다.",
+      content: buildFinancialPositionSummary(latest),
     },
     {
       title: "현금 요약",

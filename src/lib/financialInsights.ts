@@ -37,6 +37,33 @@ export type FinancialInsight = {
   evidence: FinancialInsightEvidence[];
 };
 
+function getInsightDisplayPriority(insight: FinancialInsight) {
+  return insight.evidence.length >= 2 ? 0 : 1;
+}
+
+export function sortFinancialInsightCardsForDisplay(
+  insights: readonly FinancialInsight[] | null | undefined
+): FinancialInsight[] {
+  if (!insights?.length) return [];
+
+  return insights
+    .map((insight, index) => ({ insight, index }))
+    .sort((a, b) => {
+      const yearDiff =
+        getFiscalYearNumber(b.insight.year) -
+        getFiscalYearNumber(a.insight.year);
+      if (yearDiff !== 0) return yearDiff;
+
+      const priorityDiff =
+        getInsightDisplayPriority(a.insight) -
+        getInsightDisplayPriority(b.insight);
+      if (priorityDiff !== 0) return priorityDiff;
+
+      return a.index - b.index;
+    })
+    .map(({ insight }) => insight);
+}
+
 export const PROFIT_QUALITY_INSIGHT_IDS = [
   "operating-loss-net-profit",
   "net-income-much-higher-than-operating-profit",

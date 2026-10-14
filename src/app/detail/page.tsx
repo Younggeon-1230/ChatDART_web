@@ -124,6 +124,10 @@ type MiniChartConfig = {
   highlightProfitLoss?: boolean;
 };
 
+type GrowthMiniChartConfig = MiniChartConfig & {
+  growthAccent: "blue" | "cyan" | "emerald" | "violet";
+};
+
 type DetailMetricCard = {
   label: string;
   value: string;
@@ -176,7 +180,31 @@ const CHART_GRID_CLASSNAME = "grid grid-cols-1 gap-4 md:grid-cols-2";
 const DETAIL_SURFACE_CLASSNAME =
   "rounded-lg border border-sky-100 bg-sky-50/70 px-4 py-4";
 const DETAIL_CHART_CARD_CLASSNAME =
-  "min-h-[420px] min-w-0 max-w-full rounded-lg border border-sky-100 bg-gradient-to-br from-white to-sky-50 p-4 shadow-sm shadow-sky-100/50 sm:p-5";
+  "min-h-[420px] min-w-0 max-w-full rounded-lg border-2 bg-gradient-to-br from-white p-4 shadow-sm sm:p-5";
+const DEFAULT_CHART_CARD_TONE =
+  "border-sky-200 to-sky-50/60 shadow-sky-100/60";
+const OPERATING_MARGIN_CHART_STYLE = {
+  card: "border-blue-300 to-blue-50/70 shadow-blue-100/80",
+  label: "text-blue-950 [&>span]:bg-blue-600",
+} as const;
+const GROWTH_CHART_STYLES = {
+  blue: {
+    card: "border-blue-200 to-blue-50/70 shadow-blue-100/70",
+    label: "text-blue-950 [&>span]:bg-blue-500",
+  },
+  cyan: {
+    card: "border-cyan-200 to-cyan-50/70 shadow-cyan-100/70",
+    label: "text-cyan-950 [&>span]:bg-cyan-500",
+  },
+  emerald: {
+    card: "border-emerald-200 to-emerald-50/70 shadow-emerald-100/70",
+    label: "text-emerald-950 [&>span]:bg-emerald-500",
+  },
+  violet: {
+    card: "border-violet-200 to-violet-50/70 shadow-violet-100/70",
+    label: "text-violet-950 [&>span]:bg-violet-500",
+  },
+} as const;
 
 function getComprehensiveStatusClassName(
   status: ComprehensiveFinancialStatus
@@ -764,30 +792,34 @@ function DetailPageContent() {
     (card) => card.title === "재무 상태 요약"
   );
 
-  const profitCharts = useMemo<MiniChartConfig[]>(
+  const profitCharts = useMemo<GrowthMiniChartConfig[]>(
     () => {
-      const charts: MiniChartConfig[] = [
+      const charts: GrowthMiniChartConfig[] = [
         {
           title: "매출",
           values: getValues(chartData, "revenue"),
           formatter: formatEok,
+          growthAccent: "blue",
         },
         {
           title: "매출총이익",
           values: getValues(chartData, "gross_profit"),
           formatter: formatEok,
+          growthAccent: "cyan",
         },
         {
           title: "영업이익",
           values: getValues(chartData, "operating_profit"),
           formatter: formatEok,
           highlightProfitLoss: true,
+          growthAccent: "emerald",
         },
         {
           title: "당기순이익",
           values: getValues(chartData, "net_income"),
           formatter: formatEok,
           highlightProfitLoss: true,
+          growthAccent: "violet",
         },
       ];
 
@@ -1496,9 +1528,13 @@ function DetailPageContent() {
                       {profitCharts.map((chart) => (
                         <div
                           key={chart.title}
-                          className={DETAIL_CHART_CARD_CLASSNAME}
+                          className={`${DETAIL_CHART_CARD_CLASSNAME} ${GROWTH_CHART_STYLES[chart.growthAccent].card}`}
                         >
-                          <SectionLabel>{chart.title}</SectionLabel>
+                          <SectionLabel
+                            className={GROWTH_CHART_STYLES[chart.growthAccent].label}
+                          >
+                            {chart.title}
+                          </SectionLabel>
                           <div className="mt-4">
                             <SimpleLineChart
                               title={chart.title}
@@ -1535,9 +1571,21 @@ function DetailPageContent() {
                       {ratioCharts.map((chart) => (
                         <div
                           key={chart.title}
-                          className={DETAIL_CHART_CARD_CLASSNAME}
+                          className={`${DETAIL_CHART_CARD_CLASSNAME} ${
+                            chart.title === "영업이익률"
+                              ? OPERATING_MARGIN_CHART_STYLE.card
+                              : DEFAULT_CHART_CARD_TONE
+                          }`}
                         >
-                          <SectionLabel>{chart.title}</SectionLabel>
+                          <SectionLabel
+                            className={
+                              chart.title === "영업이익률"
+                                ? OPERATING_MARGIN_CHART_STYLE.label
+                                : undefined
+                            }
+                          >
+                            {chart.title}
+                          </SectionLabel>
                           <div className="mt-4">
                             <SimpleLineChart
                               title={chart.title}
@@ -1576,7 +1624,7 @@ function DetailPageContent() {
                       {[...balanceCharts, ...cashCharts].map((chart) => (
                         <div
                           key={chart.title}
-                          className={DETAIL_CHART_CARD_CLASSNAME}
+                          className={`${DETAIL_CHART_CARD_CLASSNAME} ${DEFAULT_CHART_CARD_TONE}`}
                         >
                           <SectionLabel>{chart.title}</SectionLabel>
                           <div className="mt-4">

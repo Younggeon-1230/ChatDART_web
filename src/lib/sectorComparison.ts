@@ -9,6 +9,11 @@ export type SectorComparisonMetricKey =
   | "roa"
   | "debt_ratio";
 
+export type SectorComparisonValueTone =
+  | "positive"
+  | "caution"
+  | "neutral";
+
 export type SectorComparisonItem = {
   key: SectorComparisonMetricKey;
   label: string;
@@ -68,6 +73,33 @@ const FINANCIAL_METRIC_KEYS = new Set<SectorComparisonMetricKey>([
   "roa",
   "debt_ratio",
 ]);
+
+const PROFITABILITY_METRIC_KEYS = new Set<SectorComparisonMetricKey>([
+  "operating_margin",
+  "net_margin",
+  "roe",
+  "roa",
+]);
+
+export function getSectorComparisonValueTone(
+  metricKey: SectorComparisonMetricKey,
+  companyValue: number | null | undefined,
+  sectorAverage: number | null | undefined
+): SectorComparisonValueTone {
+  if (
+    !PROFITABILITY_METRIC_KEYS.has(metricKey) ||
+    typeof companyValue !== "number" ||
+    !Number.isFinite(companyValue) ||
+    typeof sectorAverage !== "number" ||
+    !Number.isFinite(sectorAverage)
+  ) {
+    return "neutral";
+  }
+
+  if (companyValue > sectorAverage) return "positive";
+  if (companyValue < sectorAverage) return "caution";
+  return "neutral";
+}
 
 function getFiniteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
