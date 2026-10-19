@@ -14,6 +14,7 @@ import {
   getApiErrorCode,
   getApiErrorMessage,
   getFinanceServiceUnavailableKind,
+  markAsNetworkError,
   parseApiErrorBody,
 } from "@/lib/apiErrors";
 
@@ -162,10 +163,28 @@ export function buildCompanyAnalysisUrl(
   return query ? `${path}?${query}` : path;
 }
 
-function buildSearchUrl(query: string) {
-  const url = new URL(joinApiUrl(COMPANY_SEARCH_BASE_URL, "/search"));
+export function buildCompanySearchUrl(
+  baseUrl: string,
+  query: string,
+  browserOrigin?: string
+) {
+  const path = joinApiUrl(baseUrl, "/search");
+  const origin =
+    browserOrigin ??
+    (typeof window !== "undefined" ? window.location?.origin : undefined);
+
+  if (!origin && path.startsWith("/")) {
+    const searchParams = new URLSearchParams({ keyword: query });
+    return `${path}?${searchParams.toString()}`;
+  }
+
+  const url = new URL(path, origin);
   url.searchParams.set("keyword", query);
   return url.toString();
+}
+
+function buildSearchUrl(query: string) {
+  return buildCompanySearchUrl(COMPANY_SEARCH_BASE_URL, query);
 }
 
 function getCompanyMatchKeys(company: CompanySearchItem) {
@@ -402,11 +421,21 @@ async function fetchSearchResponse(
   signal: AbortSignal,
   hasRetriedAfterRefresh = false
 ) {
-  const response = await fetch(requestUrl, {
-    headers: buildSearchHeaders(),
-    cache: "no-store",
-    signal,
-  });
+  let response: Response;
+
+  try {
+    response = await fetch(requestUrl, {
+      headers: buildSearchHeaders(),
+      cache: "no-store",
+      signal,
+    });
+  } catch (error) {
+    if (error instanceof DOMException && error.name === "AbortError") {
+      throw error;
+    }
+
+    throw markAsNetworkError(error);
+  }
 
   if (
     response.status === 401 &&

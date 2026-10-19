@@ -1,7 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { searchCompanies } from "@/lib/companySearch";
+import {
+  buildCompanySearchUrl,
+  searchCompanies,
+} from "@/lib/companySearch";
+import {
+  getApiErrorMessage,
+} from "@/lib/apiErrors";
 
 function createMemoryStorage(initialValues: Record<string, string>): Storage {
   const values = new Map(Object.entries(initialValues));
@@ -39,6 +45,7 @@ function installAuthenticatedWindow() {
     configurable: true,
     value: {
       localStorage: storage,
+      location: { origin: "http://chatdart.local" },
       setTimeout: globalThis.setTimeout,
       clearTimeout: globalThis.clearTimeout,
       dispatchEvent: () => true,
@@ -53,6 +60,66 @@ function installAuthenticatedWindow() {
     }
   };
 }
+
+test("company search URL supports absolute and relative API bases", () => {
+  const absoluteUrl = new URL(
+    buildCompanySearchUrl(
+      "https://api.example.com/api/v1/finance",
+      "삼성전자",
+      "http://chatdart.local"
+    )
+  );
+  const relativeUrl = new URL(
+    buildCompanySearchUrl(
+      "/api/v1/finance",
+      "삼성전자",
+      "http://chatdart.local"
+    )
+  );
+
+  assert.equal(
+    absoluteUrl.toString(),
+    "https://api.example.com/api/v1/finance/search?keyword=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90"
+  );
+  assert.equal(relativeUrl.origin, "http://chatdart.local");
+  assert.equal(relativeUrl.pathname, "/api/v1/finance/search");
+  assert.equal(relativeUrl.searchParams.get("keyword"), "삼성전자");
+  assert.match(relativeUrl.search, /keyword=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90/);
+});
+
+test("company search URL remains SSR-safe without a browser origin", () => {
+  assert.equal(
+    buildCompanySearchUrl("/api/v1/finance", "삼성전자"),
+    "/api/v1/finance/search?keyword=%EC%82%BC%EC%84%B1%EC%A0%84%EC%9E%90"
+  );
+});
+
+test("local URL TypeError is not reported as a network failure", () => {
+  const error = new TypeError("Failed to construct 'URL': Invalid URL");
+
+  assert.equal(getApiErrorMessage(error, error.message), error.message);
+});
+
+test("actual company search fetch failures keep the network error message", async () => {
+  const originalFetch = globalThis.fetch;
+  const restoreWindow = installAuthenticatedWindow();
+
+  globalThis.fetch = async () => {
+    throw new TypeError("request rejected");
+  };
+
+  try {
+    await assert.rejects(
+      searchCompanies("삼성전자", { enableMockFallback: false }),
+      (error: unknown) =>
+        error instanceof Error &&
+        error.message === "네트워크 연결을 확인한 뒤 다시 시도해 주세요."
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restoreWindow();
+  }
+});
 
 test("company search preserves its endpoint, query, and Bearer without tunnel headers", async () => {
   const originalFetch = globalThis.fetch;

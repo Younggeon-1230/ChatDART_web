@@ -3,6 +3,7 @@ import type { ApiErrorCode, ApiErrorResponse } from "@/types/api";
 type ErrorWithStatus = Error & {
   code?: ApiErrorCode;
   detail?: ApiErrorResponse["detail"];
+  isNetworkError?: boolean;
   status?: number;
   userMessage?: string;
 };
@@ -141,6 +142,30 @@ export function getApiStatusMessage(
   }
 }
 
+export function markAsNetworkError(error: unknown) {
+  const networkError =
+    error instanceof Error ? error : new Error("Network request failed");
+
+  (networkError as ErrorWithStatus).isNetworkError = true;
+  return networkError;
+}
+
+export function isNetworkError(error: unknown) {
+  const err = error as Partial<ErrorWithStatus>;
+
+  if (err.isNetworkError === true) {
+    return true;
+  }
+
+  if (!(error instanceof TypeError)) {
+    return false;
+  }
+
+  return /^(failed to fetch|fetch failed|load failed|networkerror\b)/i.test(
+    cleanMessage(error.message)
+  );
+}
+
 export function getApiErrorMessage(
   error: unknown,
   fallback = DEFAULT_API_ERROR_MESSAGE
@@ -158,7 +183,7 @@ export function getApiErrorMessage(
     return explicitMessage;
   }
 
-  if (error instanceof TypeError) {
+  if (isNetworkError(error)) {
     return "네트워크 연결을 확인한 뒤 다시 시도해 주세요.";
   }
 
